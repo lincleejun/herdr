@@ -122,10 +122,12 @@ impl App {
         let Some(item) = module.items.iter().find(|item| item.id == item_id) else {
             return encode_error(id, "module_item_not_found", "module item not found");
         };
-        if !item
-            .actions
-            .iter()
-            .any(|action| action.action_id == action_id)
+        let click_matches = item.click_action.as_deref() == Some(action_id);
+        if !click_matches
+            && !item
+                .actions
+                .iter()
+                .any(|action| action.action_id == action_id)
         {
             return encode_error(id, "module_action_not_found", "module action not found");
         }
@@ -207,8 +209,11 @@ fn validate_item(item: &mut ModuleItem, plugin_owned: bool) -> Result<(), String
             "a module item may offer at most {MAX_ACTIONS_PER_ITEM} actions"
         ));
     }
-    if !item.actions.is_empty() && !plugin_owned {
+    if (!item.actions.is_empty() || item.click_action.is_some()) && !plugin_owned {
         return Err("module item actions require a plugin:<id> source".to_string());
+    }
+    if let Some(click_action) = item.click_action.take() {
+        item.click_action = Some(normalize_identifier(&click_action, "module action id")?);
     }
     for action in &mut item.actions {
         validate_action(action)?;
@@ -288,6 +293,7 @@ mod tests {
                 detail: Some("in 2h".to_string()),
                 status: ModuleItemStatus::Active,
                 actions: Vec::new(),
+                click_action: None,
             }],
         }
     }
@@ -431,6 +437,7 @@ mod tests {
                 detail: None,
                 status: ModuleItemStatus::Neutral,
                 actions: Vec::new(),
+                click_action: None,
             })
             .collect();
         cases.push(too_many_items);
@@ -440,6 +447,9 @@ mod tests {
             label: "run".into(),
         });
         cases.push(non_plugin_action);
+        let mut non_plugin_click = module("tool.a", "one", 0);
+        non_plugin_click.items[0].click_action = Some("open".into());
+        cases.push(non_plugin_click);
 
         for (index, case) in cases.into_iter().enumerate() {
             let response = app.handle_module_set(format!("case-{index}"), case);
@@ -493,5 +503,25 @@ mod tests {
         assert_eq!(error_code(&response), "module_item_not_found");
         let response = app.handle_module_item_activate("a".into(), activate("one", "nightly"));
         assert_eq!(error_code(&response), "module_action_not_found");
+    }
+
+    #[test]
+    fn module_item_activate_accepts_click_action_and_rejects_unknown_ids() {
+        let mut app = test_app();
+        let mut published = module("plugin:example.jobs", "one", 0);
+        published.items[0].click_action = Some("open".into());
+        app.state.modules = vec![published];
+        let activate = |action_id: &str| ModuleItemActivateParams {
+            source: "plugin:example.jobs".into(),
+            module_id: "one".into(),
+            item_id: "nightly".into(),
+            action_id: action_id.into(),
+        };
+
+        let response = app.handle_module_item_activate("x".into(), activate("other"));
+        assert_eq!(error_code(&response), "module_action_not_found");
+        // The click action passes item validation and reaches plugin resolution.
+        let response = app.handle_module_item_activate("c".into(), activate("open"));
+        assert_ne!(error_code(&response), "module_action_not_found", "{response}");
     }
 }

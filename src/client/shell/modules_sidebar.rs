@@ -160,9 +160,31 @@ fn render_item(
         );
     }
 
-    if !show_actions {
-        return;
+    if show_actions {
+        render_action_controls(buffer, row, module, item, actions_width, config, hits);
     }
+    // Pushed after the controls: hit lookup takes the first match, so controls win.
+    if let Some(click_action) = item.click_action.as_ref().filter(|_| config.mouse_capture) {
+        hits.module_actions.push(ModuleActionHit {
+            rect: Rect::new(row.x, row.y, left_width, 1),
+            source: module.source.clone(),
+            module_id: module.module_id.clone(),
+            item_id: item.id.clone(),
+            action_id: click_action.clone(),
+        });
+    }
+}
+
+fn render_action_controls(
+    buffer: &mut Buffer,
+    row: Rect,
+    module: &ModuleSetParams,
+    item: &ModuleItem,
+    actions_width: u16,
+    config: &ClientShellConfig,
+    hits: &mut ShellHitMap,
+) {
+    let palette = &config.palette;
     let style = Style::default()
         .fg(palette.overlay1)
         .add_modifier(Modifier::BOLD);

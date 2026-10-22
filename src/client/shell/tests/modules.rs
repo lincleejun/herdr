@@ -19,6 +19,7 @@ fn module_item(
                 label: (*label).into(),
             })
             .collect(),
+        click_action: None,
     }
 }
 
@@ -134,6 +135,46 @@ fn modules_render_above_spaces_and_actions_activate_plugin_items() {
             action_id: "pause".into(),
         }
     );
+}
+
+fn activated_action_id(outcome: &ClientShellInput) -> String {
+    let [ClientShellAction::Endpoint { request, .. }] = &outcome.actions[..] else {
+        panic!("module click should invoke an endpoint method");
+    };
+    let crate::api::schema::Method::ModuleItemActivate(params) = &request.method else {
+        panic!("expected module.item.activate, got {:?}", request.method);
+    };
+    assert_eq!(params.item_id, "nightly");
+    params.action_id.clone()
+}
+
+#[test]
+fn module_row_click_activates_click_action_and_controls_keep_priority() {
+    let mut state = modules_state();
+    let mut module = default_module();
+    module.items[0].click_action = Some("open".into());
+    state.set_test_endpoint_modules(&ClientEndpointId::Local, "boot-1", vec![module]);
+
+    let rows = sidebar_rows(&mut state, 106, 30);
+    let item = row_index(&rows, "● Nightly 5m") as u16;
+    let hits = &state.hits.module_actions;
+    let row_hit = hits
+        .iter()
+        .find(|hit| hit.action_id == "open")
+        .expect("row hit")
+        .rect;
+    let stop = hits
+        .iter()
+        .find(|hit| hit.action_id == "pause")
+        .expect("pause control hit")
+        .rect;
+    let first_control = hits[0].rect;
+    assert_eq!(row_hit.y, item);
+    assert_eq!(row_hit.right(), first_control.x, "row hit ends at the controls");
+
+    let label = Rect::new(row_hit.x + 3, item, 1, 1);
+    assert_eq!(activated_action_id(&click(&mut state, label)), "open");
+    assert_eq!(activated_action_id(&click(&mut state, stop)), "pause");
 }
 
 #[test]

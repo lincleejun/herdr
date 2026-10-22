@@ -1129,6 +1129,7 @@ action = "bootstrap"
                 detail: None,
                 status: crate::api::schema::ModuleItemStatus::Neutral,
                 actions: Vec::new(),
+                click_action: None,
             }],
         }
     }

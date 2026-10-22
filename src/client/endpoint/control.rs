@@ -205,6 +205,7 @@ mod tests {
                     action_id: "run".into(),
                     label: "▶".into(),
                 }],
+                click_action: Some("open".into()),
             }],
         }
     }

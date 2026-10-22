@@ -1069,6 +1069,7 @@ async fn client_shell_pairs_module_set_replacement_and_clear_with_snapshots() {
             detail: None,
             status: ModuleItemStatus::Active,
             actions: Vec::new(),
+            click_action: None,
         }],
     };
     server.app.state.modules = vec![module.clone()];

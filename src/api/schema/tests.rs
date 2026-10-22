@@ -431,7 +431,8 @@ fn module_requests_round_trip() {
                     "label": "Nightly build",
                     "detail": "in 2h",
                     "status": "active",
-                    "actions": [{"action_id": "run", "label": "run"}]
+                    "actions": [{"action_id": "run", "label": "run"}],
+                    "click_action": "open"
                 },
                 {"id": "weekly", "label": "Weekly report"}
             ]
@@ -443,6 +444,8 @@ fn module_requests_round_trip() {
     };
     assert_eq!(params.items[1].status, ModuleItemStatus::Neutral);
     assert!(params.items[1].actions.is_empty());
+    assert_eq!(params.items[0].click_action.as_deref(), Some("open"));
+    assert_eq!(params.items[1].click_action, None);
     assert_eq!(serde_json::to_value(request).unwrap(), set_json);
 
     let future_status: ModuleItem = serde_json::from_value(serde_json::json!({

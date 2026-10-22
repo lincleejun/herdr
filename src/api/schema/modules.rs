@@ -27,6 +27,9 @@ pub struct ModuleItem {
     /// Plugin actions offered for this item, rendered as clickable controls.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<ModuleItemAction>,
+    /// Plugin action run when the item row (left of the action controls) is clicked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click_action: Option<String>,
 }
 
 #[derive(

@@ -2382,6 +2382,13 @@
               },
               "type": "array"
             },
+            "click_action": {
+              "description": "Plugin action run when the item row (left of the action controls) is clicked.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "detail": {
               "type": [
                 "string",
@@ -8000,6 +8007,13 @@
                 "$ref": "#/schemas/success_response/$defs/ModuleItemAction"
               },
               "type": "array"
+            },
+            "click_action": {
+              "description": "Plugin action run when the item row (left of the action controls) is clicked.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "detail": {
               "type": [

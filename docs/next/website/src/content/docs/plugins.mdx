@@ -302,7 +302,8 @@ while Windows clients connect to a named pipe. CLI calls through
 
 A plugin can publish small status lists at the top of the expanded sidebar with
 `module.set`, and attach its manifest actions to each item as clickable
-controls. Modules are transient: publish them from a `[[startup]]` hook or a
+controls or, with `click_action`, to the item row itself. Modules are transient:
+publish them from a `[[startup]]` hook or a
 long-running process started there. See [Modules](/docs/socket-api/#modules)
 for the request shape.
 

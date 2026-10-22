@@ -383,6 +383,7 @@ mod tests {
                     action_id: "run".into(),
                     label: "run".into(),
                 }],
+                click_action: None,
             }],
         }];
         let ServerMessage::EndpointControl { kind, data } =

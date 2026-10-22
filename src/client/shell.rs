@@ -23,6 +23,7 @@ mod input;
 mod input_source;
 mod link_hover;
 mod mobile;
+mod modules_sidebar;
 mod mouse;
 mod notification_policy;
 mod notifications;

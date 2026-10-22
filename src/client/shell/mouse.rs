@@ -22,11 +22,11 @@ impl ClientShellState {
     }
 
     fn set_sidebar_section_from_row(&mut self, row: u16, outcome: &mut ClientShellInput) {
-        let divider = self.hits.sidebar_divider;
-        if divider.height == 0 {
+        let sections = self.hits.sidebar_sections;
+        if sections.height == 0 {
             return;
         }
-        let ratio = row.saturating_sub(divider.y) as f32 / divider.height as f32;
+        let ratio = row.saturating_sub(sections.y) as f32 / sections.height as f32;
         let ratio = ratio.clamp(0.1, 0.9);
         if (self.sidebar_section_split - ratio).abs() > f32::EPSILON {
             self.sidebar_section_split = ratio;
@@ -2139,6 +2139,24 @@ impl ClientShellState {
                     .flatten();
                 if let Some(tab_press) = tab_press {
                     self.tab_press = Some(tab_press);
+                    return;
+                }
+                let module_action = self
+                    .hits
+                    .module_actions
+                    .iter()
+                    .find(|hit| super::contains(hit.rect, point))
+                    .map(|hit| crate::api::schema::ModuleItemActivateParams {
+                        source: hit.source.clone(),
+                        module_id: hit.module_id.clone(),
+                        item_id: hit.item_id.clone(),
+                        action_id: hit.action_id.clone(),
+                    });
+                if let Some(params) = module_action {
+                    self.push_endpoint_method(
+                        crate::api::schema::Method::ModuleItemActivate(params),
+                        outcome,
+                    );
                     return;
                 }
                 if self.handle_endpoint_agent_click(point, outcome) {

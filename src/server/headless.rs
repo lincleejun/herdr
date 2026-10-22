@@ -1990,6 +1990,22 @@ impl HeadlessServer {
                     },
                     None => None,
                 };
+                let modules = self.app.state.modules.clone();
+                let modules_message = if modules.is_empty() {
+                    None
+                } else {
+                    match crate::protocol::endpoint::modules_projection_message(
+                        &seed_snapshot.boot_id,
+                        seed_snapshot.revision,
+                        &modules,
+                    ) {
+                        Ok(message) => Some(message),
+                        Err(err) => {
+                            warn!(client_id, err = %err, "failed to encode endpoint modules");
+                            return false;
+                        }
+                    }
+                };
                 let snapshot_message =
                     match crate::protocol::endpoint::snapshot_message(&seed_snapshot) {
                         Ok(message) => message,
@@ -2011,11 +2027,15 @@ impl HeadlessServer {
                 connection.shell_snapshot = Some(seed_snapshot);
                 connection.shell_agent_completions = Some(completion_projection);
                 connection.shell_agent_view = agent_view;
+                connection.shell_modules = modules;
                 self.clients.insert(client_id, connection);
                 if self.app.state.popup_pane.is_some() && self.popup_owner_tab_id.is_none() {
                     self.popup_owner_tab_id = self.shell_tab_id_for_client(client_id);
                 }
                 if let Some(message) = projection_message {
+                    self.send_to_client(client_id, message);
+                }
+                if let Some(message) = modules_message {
                     self.send_to_client(client_id, message);
                 }
                 self.send_to_client(client_id, completion_message);

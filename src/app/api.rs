@@ -5,6 +5,7 @@ mod agents;
 mod env;
 mod integrations;
 mod layouts;
+mod modules;
 mod panes;
 pub(crate) mod plugins;
 pub(super) mod responses;
@@ -1255,6 +1256,18 @@ impl App {
             }
             Method::PluginPaneClose(params) => {
                 return self.handle_plugin_pane_close(request.id, params);
+            }
+            Method::ModuleSet(params) => {
+                return self.handle_module_set(request.id, params);
+            }
+            Method::ModuleClear(params) => {
+                return self.handle_module_clear(request.id, params);
+            }
+            Method::ModuleList(_) => {
+                return self.handle_module_list(request.id);
+            }
+            Method::ModuleItemActivate(params) => {
+                return self.handle_module_item_activate(request.id, params);
             }
             _ => {
                 return responses::encode_error(

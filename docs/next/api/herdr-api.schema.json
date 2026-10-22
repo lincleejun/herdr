@@ -2354,6 +2354,148 @@
           ],
           "type": "object"
         },
+        "ModuleClearParams": {
+          "properties": {
+            "module_id": {
+              "description": "Clear only this module id. Requires `source`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "description": "Clear only modules owned by this source. Omit to clear every module.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "ModuleItem": {
+          "properties": {
+            "actions": {
+              "description": "Plugin actions offered for this item, rendered as clickable controls.",
+              "items": {
+                "$ref": "#/schemas/request/$defs/ModuleItemAction"
+              },
+              "type": "array"
+            },
+            "detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/schemas/request/$defs/ModuleItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "ModuleItemAction": {
+          "properties": {
+            "action_id": {
+              "description": "Action id local to the owning plugin's manifest.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Short control text, such as `▶` or `pause`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action_id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "ModuleItemActivateParams": {
+          "description": "Invoke one action offered by a published module item.",
+          "properties": {
+            "action_id": {
+              "type": "string"
+            },
+            "item_id": {
+              "type": "string"
+            },
+            "module_id": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "module_id",
+            "item_id",
+            "action_id"
+          ],
+          "type": "object"
+        },
+        "ModuleItemStatus": {
+          "oneOf": [
+            {
+              "enum": [
+                "neutral",
+                "active",
+                "ok",
+                "warning",
+                "error",
+                "paused"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Status values added after this build; rendered like `neutral`.",
+              "type": "string"
+            }
+          ]
+        },
+        "ModuleSetParams": {
+          "description": "One named module published by a source (normally `plugin:<id>`).\n\nModules are transient session state: they disappear when replaced, cleared,\nwhen the owning plugin is disabled or unlinked, or when the server exits.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/schemas/request/$defs/ModuleItem"
+              },
+              "type": "array"
+            },
+            "module_id": {
+              "type": "string"
+            },
+            "order": {
+              "description": "Lower values render first. Ties sort by source, then module id.",
+              "format": "int32",
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "module_id",
+            "title"
+          ],
+          "type": "object"
+        },
         "NotificationShowParams": {
           "properties": {
             "body": {
@@ -3493,6 +3635,18 @@
               ]
             },
             "link_handler_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "module_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "module_item_id": {
               "type": [
                 "string",
                 "null"
@@ -6312,6 +6466,70 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "module.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ModuleSetParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "module.clear",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ModuleClearParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "module.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "module.item.activate",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ModuleItemActivateParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -7774,6 +7992,105 @@
             }
           ]
         },
+        "ModuleItem": {
+          "properties": {
+            "actions": {
+              "description": "Plugin actions offered for this item, rendered as clickable controls.",
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ModuleItemAction"
+              },
+              "type": "array"
+            },
+            "detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/schemas/success_response/$defs/ModuleItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "ModuleItemAction": {
+          "properties": {
+            "action_id": {
+              "description": "Action id local to the owning plugin's manifest.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Short control text, such as `▶` or `pause`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action_id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "ModuleItemStatus": {
+          "oneOf": [
+            {
+              "enum": [
+                "neutral",
+                "active",
+                "ok",
+                "warning",
+                "error",
+                "paused"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Status values added after this build; rendered like `neutral`.",
+              "type": "string"
+            }
+          ]
+        },
+        "ModuleSetParams": {
+          "description": "One named module published by a source (normally `plugin:<id>`).\n\nModules are transient session state: they disappear when replaced, cleared,\nwhen the owning plugin is disabled or unlinked, or when the server exits.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ModuleItem"
+              },
+              "type": "array"
+            },
+            "module_id": {
+              "type": "string"
+            },
+            "order": {
+              "description": "Lower values render first. Ties sort by source, then module id.",
+              "format": "int32",
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "module_id",
+            "title"
+          ],
+          "type": "object"
+        },
         "NotificationShowReason": {
           "enum": [
             "shown",
@@ -8774,6 +9091,18 @@
               ]
             },
             "link_handler_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "module_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "module_item_id": {
               "type": [
                 "string",
                 "null"
@@ -10413,6 +10742,25 @@
               },
               "required": [
                 "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "modules": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/ModuleSetParams"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "module_list",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "modules"
               ],
               "type": "object"
             }

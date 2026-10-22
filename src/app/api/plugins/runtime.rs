@@ -79,6 +79,12 @@ impl App {
                 link_handler_id.clone(),
             ));
         }
+        if let Some(module_id) = context.module_id.as_ref() {
+            env.push(("HERDR_MODULE_ID".to_string(), module_id.clone()));
+        }
+        if let Some(module_item_id) = context.module_item_id.as_ref() {
+            env.push(("HERDR_MODULE_ITEM_ID".to_string(), module_item_id.clone()));
+        }
         if self.state.plugin_commands_in_flight >= MAX_PLUGIN_COMMANDS_IN_FLIGHT {
             let message = format!(
                 "maximum concurrent plugin commands reached ({MAX_PLUGIN_COMMANDS_IN_FLIGHT})"

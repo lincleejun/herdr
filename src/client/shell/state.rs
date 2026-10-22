@@ -102,6 +102,10 @@ pub(super) struct ShellHitMap {
     pub(super) agent_sort_toggle: Rect,
     pub(super) sidebar_divider: Rect,
     pub(super) sidebar_section_divider: Rect,
+    /// Spaces + agents part of the expanded sidebar (below any plugin modules), including the
+    /// width-divider column. Section-divider drags compute their split ratio against it.
+    pub(super) sidebar_sections: Rect,
+    pub(super) module_actions: Vec<ModuleActionHit>,
     pub(super) sidebar_toggle: Rect,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
@@ -138,6 +142,15 @@ pub(super) struct ShellHitMap {
     pub(super) release_notes_scrollbar: Rect,
     pub(super) release_notes_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) release_notes_max_scroll: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ModuleActionHit {
+    pub(super) rect: Rect,
+    pub(super) source: String,
+    pub(super) module_id: String,
+    pub(super) item_id: String,
+    pub(super) action_id: String,
 }
 
 #[derive(Clone)]

@@ -31,6 +31,9 @@ pub const AGENT_VIEW_PROJECTION_CAPABILITY: &str = "agent_view_projection";
 pub const AGENT_VIEW_PROJECTION_KIND: &str = "endpoint.agent-view.v1";
 pub const AGENT_COMPLETIONS_CAPABILITY: &str = "agent_completions";
 pub const AGENT_COMPLETIONS_KIND: &str = "endpoint.agent-completions.v1";
+/// Optional companion control carrying plugin-published modules. Clients that do
+/// not know this kind ignore it; it never changes the snapshot codec.
+pub const MODULES_PROJECTION_KIND: &str = "endpoint.modules.v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointAgentCompletions {
@@ -90,6 +93,16 @@ pub struct EndpointAgentViewProjection {
     pub view: Option<serde_json::Value>,
 }
 
+/// Plugin-published modules for one endpoint boot. Each module stays opaque JSON
+/// so a client can drop entries it cannot decode without rejecting the endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndpointModulesProjection {
+    pub boot_id: String,
+    pub revision: u64,
+    #[serde(default)]
+    pub modules: Vec<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointServerWelcome {
     pub generation: u32,
@@ -134,6 +147,25 @@ pub fn agent_view_projection_message(
     };
     Ok(ServerMessage::EndpointControl {
         kind: AGENT_VIEW_PROJECTION_KIND.into(),
+        data: serde_json::to_string(&projection)?,
+    })
+}
+
+pub fn modules_projection_message(
+    boot_id: &str,
+    revision: u64,
+    modules: &[crate::api::schema::ModuleSetParams],
+) -> serde_json::Result<ServerMessage> {
+    let projection = EndpointModulesProjection {
+        boot_id: boot_id.to_owned(),
+        revision,
+        modules: modules
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<serde_json::Result<_>>()?,
+    };
+    Ok(ServerMessage::EndpointControl {
+        kind: MODULES_PROJECTION_KIND.into(),
         data: serde_json::to_string(&projection)?,
     })
 }
@@ -331,6 +363,54 @@ mod tests {
                 .unwrap(),
             Some(view)
         );
+    }
+
+    #[test]
+    fn modules_projection_round_trips_as_a_revision_bound_control() {
+        use crate::api::schema::{ModuleItem, ModuleItemAction, ModuleItemStatus, ModuleSetParams};
+
+        let modules = vec![ModuleSetParams {
+            source: "plugin:example.schedules".into(),
+            module_id: "jobs".into(),
+            title: "Schedules".into(),
+            order: -1,
+            items: vec![ModuleItem {
+                id: "nightly".into(),
+                label: "Nightly build".into(),
+                detail: Some("in 2h".into()),
+                status: ModuleItemStatus::Warning,
+                actions: vec![ModuleItemAction {
+                    action_id: "run".into(),
+                    label: "run".into(),
+                }],
+            }],
+        }];
+        let ServerMessage::EndpointControl { kind, data } =
+            modules_projection_message("boot", 9, &modules).unwrap()
+        else {
+            panic!("modules should use endpoint control");
+        };
+        assert_eq!(kind, MODULES_PROJECTION_KIND);
+        let projection: EndpointModulesProjection = serde_json::from_str(&data).unwrap();
+        assert_eq!(projection.boot_id, "boot");
+        assert_eq!(projection.revision, 9);
+        assert_eq!(
+            projection
+                .modules
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<Vec<ModuleSetParams>, _>>()
+                .unwrap(),
+            modules
+        );
+
+        let ServerMessage::EndpointControl { data, .. } =
+            modules_projection_message("boot", 10, &[]).unwrap()
+        else {
+            panic!("empty modules should use endpoint control");
+        };
+        let empty: EndpointModulesProjection = serde_json::from_str(&data).unwrap();
+        assert!(empty.modules.is_empty());
     }
 
     #[test]

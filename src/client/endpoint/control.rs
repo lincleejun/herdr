@@ -6,9 +6,16 @@ pub(crate) struct DecodedAgentViewProjection {
     pub(crate) view: Result<Option<crate::api::schema::AgentViewSetParams>, ()>,
 }
 
+pub(crate) struct DecodedModulesProjection {
+    pub(crate) boot_id: String,
+    pub(crate) revision: u64,
+    pub(crate) modules: Vec<crate::api::schema::ModuleSetParams>,
+}
+
 pub(crate) enum EndpointControlMessage {
     HealthPong,
     AgentViewProjection(DecodedAgentViewProjection),
+    ModulesProjection(DecodedModulesProjection),
     AgentCompletions(crate::protocol::endpoint::EndpointAgentCompletions),
     Snapshot(Box<crate::protocol::ClientShellSnapshot>),
     Ignored,
@@ -50,6 +57,25 @@ pub(crate) fn decode_endpoint_control(
                 boot_id: projection.boot_id,
                 revision: projection.revision,
                 view,
+            },
+        ));
+    }
+    if kind == crate::protocol::endpoint::MODULES_PROJECTION_KIND {
+        let Ok(projection): Result<crate::protocol::endpoint::EndpointModulesProjection, _> =
+            serde_json::from_str(data)
+        else {
+            return Ok(EndpointControlMessage::Ignored);
+        };
+        let modules = projection
+            .modules
+            .into_iter()
+            .filter_map(|value| serde_json::from_value(value).ok())
+            .collect();
+        return Ok(EndpointControlMessage::ModulesProjection(
+            DecodedModulesProjection {
+                boot_id: projection.boot_id,
+                revision: projection.revision,
+                modules,
             },
         ));
     }
@@ -160,6 +186,73 @@ mod tests {
                 "not json"
             )
             .unwrap(),
+            EndpointControlMessage::Ignored
+        ));
+    }
+
+    fn sample_module(module_id: &str) -> crate::api::schema::ModuleSetParams {
+        crate::api::schema::ModuleSetParams {
+            source: "plugin:schedule".into(),
+            module_id: module_id.into(),
+            title: "Schedules".into(),
+            order: 0,
+            items: vec![crate::api::schema::ModuleItem {
+                id: "nightly".into(),
+                label: "Nightly build".into(),
+                detail: Some("in 5m".into()),
+                status: crate::api::schema::ModuleItemStatus::Active,
+                actions: vec![crate::api::schema::ModuleItemAction {
+                    action_id: "run".into(),
+                    label: "▶".into(),
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn modules_projection_decodes_every_module() {
+        let modules = vec![sample_module("tasks"), sample_module("other")];
+        let crate::protocol::ServerMessage::EndpointControl { kind, data } =
+            crate::protocol::endpoint::modules_projection_message("boot", 7, &modules).unwrap()
+        else {
+            panic!("modules control");
+        };
+        let EndpointControlMessage::ModulesProjection(decoded) =
+            decode_endpoint_control(&kind, &data).unwrap()
+        else {
+            panic!("decoded modules");
+        };
+        assert_eq!(decoded.boot_id, "boot");
+        assert_eq!(decoded.revision, 7);
+        assert_eq!(decoded.modules, modules);
+    }
+
+    #[test]
+    fn undecodable_module_is_dropped_without_rejecting_the_rest() {
+        let good = sample_module("tasks");
+        let projection = crate::protocol::endpoint::EndpointModulesProjection {
+            boot_id: "boot".into(),
+            revision: 2,
+            modules: vec![
+                serde_json::json!({"source": "plugin:broken", "title": 3}),
+                serde_json::to_value(&good).unwrap(),
+            ],
+        };
+        let EndpointControlMessage::ModulesProjection(decoded) = decode_endpoint_control(
+            crate::protocol::endpoint::MODULES_PROJECTION_KIND,
+            &serde_json::to_string(&projection).unwrap(),
+        )
+        .unwrap() else {
+            panic!("decoded modules");
+        };
+        assert_eq!(decoded.modules, vec![good]);
+    }
+
+    #[test]
+    fn malformed_modules_envelope_is_ignored() {
+        assert!(matches!(
+            decode_endpoint_control(crate::protocol::endpoint::MODULES_PROJECTION_KIND, "[1]")
+                .unwrap(),
             EndpointControlMessage::Ignored
         ));
     }

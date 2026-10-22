@@ -1010,6 +1010,135 @@ async fn client_shell_pairs_agent_view_set_replacement_and_clear_with_snapshots(
     assert!(cleared_snapshot.agent_view_label.is_none());
 }
 
+fn client_modules_projection(
+    message: ServerMessage,
+) -> crate::protocol::endpoint::EndpointModulesProjection {
+    let ServerMessage::EndpointControl { kind, data } = message else {
+        panic!("expected client modules projection");
+    };
+    assert_eq!(kind, crate::protocol::endpoint::MODULES_PROJECTION_KIND);
+    serde_json::from_str(&data).expect("decode client modules projection")
+}
+
+fn connect_test_client_shell(
+    server: &mut HeadlessServer,
+    client_id: u64,
+) -> (
+    std::sync::mpsc::Receiver<Vec<u8>>,
+    std::sync::mpsc::Receiver<Vec<u8>>,
+) {
+    let (writer, control_rx, render_rx) = test_client_writer();
+    assert!(
+        server.handle_server_event(ServerEvent::ClientShellConnected {
+            surface_reuse: false,
+            surface_delta: false,
+            surface_scroll: false,
+            client_id,
+            surface_cols: 80,
+            surface_rows: 23,
+            cell_width_px: 0,
+            cell_height_px: 0,
+            pixel_mouse: false,
+            direct_graphics: false,
+            endpoint_keybindings: false,
+            mouse_capture: false,
+            surface_active: false,
+            writer,
+        })
+    );
+    (control_rx, render_rx)
+}
+
+#[tokio::test]
+async fn client_shell_pairs_module_set_replacement_and_clear_with_snapshots() {
+    use crate::api::schema::{ModuleItem, ModuleItemStatus, ModuleSetParams};
+
+    let mut server = test_headless_server();
+    let (control_rx, _render_rx) = connect_test_client_shell(&mut server, 77);
+    // No modules: the connect sequence starts directly with completions + snapshot.
+    let initial = client_shell_snapshot(&control_rx);
+
+    let mut module = ModuleSetParams {
+        source: "example.schedules".into(),
+        module_id: "jobs".into(),
+        title: "Schedules".into(),
+        order: 0,
+        items: vec![ModuleItem {
+            id: "nightly".into(),
+            label: "Nightly".into(),
+            detail: None,
+            status: ModuleItemStatus::Active,
+            actions: Vec::new(),
+        }],
+    };
+    server.app.state.modules = vec![module.clone()];
+    server.render_and_stream();
+    let set =
+        client_modules_projection(read_server_message(control_rx.recv().expect("set modules")));
+    let set_snapshot = client_shell_snapshot(&control_rx);
+    assert!(set.revision > initial.revision);
+    assert_eq!(set.revision, set_snapshot.revision);
+    assert_eq!(set.boot_id, set_snapshot.boot_id);
+    assert_eq!(
+        set.modules
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<ModuleSetParams>, _>>()
+            .unwrap(),
+        vec![module.clone()]
+    );
+
+    module.items[0].status = ModuleItemStatus::Paused;
+    server.app.state.modules = vec![module.clone()];
+    server.render_and_stream();
+    let replacement = client_modules_projection(read_server_message(
+        control_rx.recv().expect("replacement modules"),
+    ));
+    let replacement_snapshot = client_shell_snapshot(&control_rx);
+    assert!(replacement.revision > set.revision);
+    assert_eq!(replacement.revision, replacement_snapshot.revision);
+    assert_eq!(
+        serde_json::from_value::<ModuleSetParams>(replacement.modules[0].clone()).unwrap(),
+        module
+    );
+
+    server.app.state.modules.clear();
+    server.render_and_stream();
+    let cleared = client_modules_projection(read_server_message(
+        control_rx.recv().expect("clear modules"),
+    ));
+    let cleared_snapshot = client_shell_snapshot(&control_rx);
+    assert!(cleared.revision > replacement.revision);
+    assert_eq!(cleared.revision, cleared_snapshot.revision);
+    assert!(cleared.modules.is_empty());
+
+    // Once the client has seen the empty list, later replacements omit the control.
+    server.app.state.agent_view_override = Some(crate::api::schema::AgentViewSetParams {
+        source: "example.views".into(),
+        label: Some("focus".into()),
+        filter: None,
+        sort: Vec::new(),
+    });
+    server.render_and_stream();
+    client_agent_view_projection(read_server_message(
+        control_rx.recv().expect("agent view projection"),
+    ));
+    let unrelated_snapshot = client_shell_snapshot(&control_rx);
+    assert!(unrelated_snapshot.revision > cleared.revision);
+
+    // A client connecting while modules exist receives them before its first snapshot.
+    server.app.state.agent_view_override = None;
+    server.app.state.modules = vec![module];
+    let (late_rx, _late_render_rx) = connect_test_client_shell(&mut server, 78);
+    let late = client_modules_projection(read_server_message(
+        late_rx.recv().expect("late client modules"),
+    ));
+    let late_snapshot = client_shell_snapshot(&late_rx);
+    assert_eq!(late.revision, late_snapshot.revision);
+    assert_eq!(late.boot_id, late_snapshot.boot_id);
+    assert_eq!(late.modules.len(), 1);
+}
+
 #[tokio::test]
 async fn client_shell_receives_metadata_then_shell_free_pane_surface() {
     let mut server = test_headless_server();

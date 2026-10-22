@@ -211,10 +211,23 @@ pub(crate) fn render_sidebar(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
+    let modules = super::super::modules_sidebar::active_endpoint_modules(
+        state.endpoints,
+        state.active_endpoint_id,
+    );
+    let modules_height =
+        super::super::modules_sidebar::render_modules_region(buffer, area, modules, config, hits);
+    let sections_area = Rect::new(
+        area.x,
+        area.y.saturating_add(modules_height),
+        area.width,
+        area.height.saturating_sub(modules_height),
+    );
+    hits.sidebar_sections = sections_area;
     let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
+        crate::ui::expanded_sidebar_sections(sections_area, state.sidebar_section_split);
     hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+        crate::ui::sidebar_section_divider_rect(sections_area, state.sidebar_section_split);
     put_text(
         buffer,
         workspace_area.x,

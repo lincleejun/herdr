@@ -416,6 +416,100 @@ fn agent_view_requests_round_trip() {
 }
 
 #[test]
+fn module_requests_round_trip() {
+    let set_json = serde_json::json!({
+        "id": "module-set",
+        "method": "module.set",
+        "params": {
+            "source": "plugin:example.schedules",
+            "module_id": "jobs",
+            "title": "Schedules",
+            "order": -2,
+            "items": [
+                {
+                    "id": "nightly",
+                    "label": "Nightly build",
+                    "detail": "in 2h",
+                    "status": "active",
+                    "actions": [{"action_id": "run", "label": "run"}]
+                },
+                {"id": "weekly", "label": "Weekly report"}
+            ]
+        }
+    });
+    let request: Request = serde_json::from_value(set_json.clone()).unwrap();
+    let Method::ModuleSet(params) = &request.method else {
+        panic!("expected module.set");
+    };
+    assert_eq!(params.items[1].status, ModuleItemStatus::Neutral);
+    assert!(params.items[1].actions.is_empty());
+    assert_eq!(serde_json::to_value(request).unwrap(), set_json);
+
+    let future_status: ModuleItem = serde_json::from_value(serde_json::json!({
+        "id": "future",
+        "label": "Future",
+        "status": "sleeping"
+    }))
+    .unwrap();
+    assert_eq!(future_status.status, ModuleItemStatus::Unknown);
+
+    for (json, expected) in [
+        (
+            serde_json::json!({"id": "clear-all", "method": "module.clear", "params": {}}),
+            "module.clear",
+        ),
+        (
+            serde_json::json!({
+                "id": "clear-one",
+                "method": "module.clear",
+                "params": {"source": "plugin:example.schedules", "module_id": "jobs"}
+            }),
+            "module.clear",
+        ),
+        (
+            serde_json::json!({"id": "list", "method": "module.list", "params": {}}),
+            "module.list",
+        ),
+        (
+            serde_json::json!({
+                "id": "activate",
+                "method": "module.item.activate",
+                "params": {
+                    "source": "plugin:example.schedules",
+                    "module_id": "jobs",
+                    "item_id": "nightly",
+                    "action_id": "run"
+                }
+            }),
+            "module.item.activate",
+        ),
+    ] {
+        let request: Request = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(request.method.operation().name, expected);
+        assert_eq!(serde_json::to_value(request).unwrap(), json);
+    }
+
+    let response = SuccessResponse {
+        id: "list".into(),
+        result: ResponseResult::ModuleList {
+            modules: vec![ModuleSetParams {
+                source: "example.tool".into(),
+                module_id: "jobs".into(),
+                title: "Jobs".into(),
+                order: 0,
+                items: Vec::new(),
+            }],
+        },
+    };
+    let json = serde_json::to_value(&response).unwrap();
+    assert_eq!(json["result"]["type"], "module_list");
+    assert_eq!(
+        serde_json::from_value::<SuccessResponse>(json).unwrap(),
+        response
+    );
+}
+
+#[test]
 fn unknown_method_is_rejected() {
     let json = r#"{"id":"req_1","method":"nope","params":{}}"#;
     let err = serde_json::from_str::<Request>(json)

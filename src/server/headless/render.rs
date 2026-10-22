@@ -629,6 +629,7 @@ impl HeadlessServer {
                     .get(&client_id)
                     .and_then(|client| client.shell_location.clone());
                 let agent_view = self.app.state.agent_view_override.clone();
+                let modules = &self.app.state.modules;
                 let Some(client) = self.clients.get_mut(&client_id) else {
                     continue;
                 };
@@ -648,6 +649,7 @@ impl HeadlessServer {
                 if client.shell_snapshot.as_ref() != Some(&candidate)
                     || client.shell_agent_completions.as_ref() != Some(&completions)
                     || client.shell_agent_view != agent_view
+                    || client.shell_modules != *modules
                 {
                     client.shell_projection_revision =
                         client.shell_projection_revision.saturating_add(1);
@@ -684,6 +686,23 @@ impl HeadlessServer {
                     } else {
                         None
                     };
+                    let modules_message = if !modules.is_empty() || !client.shell_modules.is_empty()
+                    {
+                        match crate::protocol::endpoint::modules_projection_message(
+                            &candidate.boot_id,
+                            candidate.revision,
+                            modules,
+                        ) {
+                            Ok(message) => Some(message),
+                            Err(err) => {
+                                warn!(client_id, err = %err, "failed to encode endpoint modules");
+                                broken_clients.push(client_id);
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     let snapshot_message =
                         match crate::protocol::endpoint::snapshot_message(&candidate) {
                             Ok(message) => message,
@@ -705,6 +724,18 @@ impl HeadlessServer {
                             continue;
                         }
                     };
+                    let modules_framed = match modules_message
+                        .as_ref()
+                        .map(Self::frame_server_message)
+                        .transpose()
+                    {
+                        Ok(framed) => framed,
+                        Err(err) => {
+                            warn!(client_id, err = %err, "failed to frame endpoint modules");
+                            broken_clients.push(client_id);
+                            continue;
+                        }
+                    };
                     let snapshot_framed = match Self::frame_server_message(&snapshot_message) {
                         Ok(framed) => framed,
                         Err(err) => {
@@ -718,6 +749,7 @@ impl HeadlessServer {
                         continue;
                     };
                     if projection_framed.is_some_and(|framed| writer.control.send(framed).is_err())
+                        || modules_framed.is_some_and(|framed| writer.control.send(framed).is_err())
                         || writer.control.send(completion_framed).is_err()
                         || writer.control.send(snapshot_framed).is_err()
                     {
@@ -727,6 +759,9 @@ impl HeadlessServer {
                     client.shell_snapshot = Some(candidate);
                     client.shell_agent_completions = Some(completions);
                     client.shell_agent_view = agent_view;
+                    if client.shell_modules != *modules {
+                        client.shell_modules.clone_from(modules);
+                    }
                 }
                 shell_projection_revision = client.shell_projection_revision;
                 if !client.shell_surface_active {

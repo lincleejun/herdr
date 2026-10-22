@@ -278,6 +278,9 @@ pub enum ResponseResult {
         projection_revision: u64,
     },
     Ok {},
+    ModuleList {
+        modules: Vec<super::modules::ModuleSetParams>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

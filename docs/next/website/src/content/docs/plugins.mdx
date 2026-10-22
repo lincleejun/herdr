@@ -271,8 +271,10 @@ injects `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ENV=1`,
 `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and `HERDR_PANE_ID`. Action commands also
 receive `HERDR_PLUGIN_ACTION_ID`; startup and event hooks receive
 `HERDR_PLUGIN_EVENT` (`startup` for startup hooks), event hooks additionally
-receive `HERDR_PLUGIN_EVENT_JSON`, and pane commands receive
-`HERDR_PLUGIN_ENTRYPOINT_ID`.
+receive `HERDR_PLUGIN_EVENT_JSON`, pane commands receive
+`HERDR_PLUGIN_ENTRYPOINT_ID`, and actions clicked from a sidebar
+[module](/docs/socket-api/#modules) receive `HERDR_MODULE_ID` and
+`HERDR_MODULE_ITEM_ID`.
 
 `HERDR_PLUGIN_ROOT` is the installed or linked plugin directory. Do not store
 user credentials or durable state there, because GitHub-installed plugin roots
@@ -284,7 +286,7 @@ but it does not validate, sync, or delete their contents. The plugin owns the
 file format and lifecycle.
 
 `HERDR_PLUGIN_CONTEXT_JSON` can include workspace, tab, focused pane, worktree,
-agent, selected text, clicked URL, and link handler fields when they are
+agent, selected text, clicked URL, link handler, and module fields when they are
 available for that invocation. Shell plugins can read the individual env vars
 for common ids, or parse the context JSON for the full shape.
 
@@ -295,6 +297,14 @@ while Windows clients connect to a named pipe. CLI calls through
 `HERDR_BIN_PATH` avoid that transport difference. See the
 [CLI reference](/docs/cli-reference/) for available commands and
 [socket API](/docs/socket-api/) for raw request shapes.
+
+## Sidebar modules
+
+A plugin can publish small status lists at the top of the expanded sidebar with
+`module.set`, and attach its manifest actions to each item as clickable
+controls. Modules are transient: publish them from a `[[startup]]` hook or a
+long-running process started there. See [Modules](/docs/socket-api/#modules)
+for the request shape.
 
 ## Panes
 

@@ -826,6 +826,8 @@ pub struct AppState {
     pub agent_panel_sort: AgentPanelSort,
     /// Transient session-wide projection override for the built-in Agents view.
     pub agent_view_override: Option<crate::api::schema::AgentViewSetParams>,
+    /// Transient source-published modules, sorted by `(order, source, module_id)`.
+    pub modules: Vec<crate::api::schema::ModuleSetParams>,
     pub sidebar_agents: crate::config::AgentsSidebarConfig,
     pub sidebar_spaces: crate::config::SpacesSidebarConfig,
     pub next_agent_state_change_seq: u64,
@@ -1068,6 +1070,7 @@ impl AppState {
             ),
             agent_panel_sort: AgentPanelSort::Spaces,
             agent_view_override: None,
+            modules: Vec::new(),
             sidebar_agents: crate::config::AgentsSidebarConfig::default(),
             sidebar_spaces: crate::config::SpacesSidebarConfig::default(),
             next_agent_state_change_seq: 0,

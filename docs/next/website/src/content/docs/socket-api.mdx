@@ -110,6 +110,7 @@ Raw socket method names use dot notation:
 | Events | `events.subscribe`, `events.wait` |
 | Integrations | `integration.install`, `integration.uninstall` |
 | Plugins | `plugin.link`, `plugin.list`, `plugin.unlink`, `plugin.enable`, `plugin.disable`, `plugin.action.list`, `plugin.action.invoke`, `plugin.log.list`, `plugin.pane.open`, `plugin.pane.focus`, `plugin.pane.close` |
+| Modules | `module.set`, `module.clear`, `module.list`, `module.item.activate` |
 
 `agent.wait` is server-owned and event-driven. It pins the resolved pane occupant so a replacement cannot satisfy the wait. `agent.prompt` accepts an optional `wait` object with `until` and `timeout_ms`; this submits the prompt and starts the wait in one request, avoiding a race between separate calls. If the resolved agent is already `blocked`, `agent.prompt` returns `agent_blocked` without sending input or starting the wait.
 
@@ -445,6 +446,62 @@ Clear unconditionally, or only when the named source still owns the view:
 
 A source mismatch leaves the active view unchanged. Set and clear responses use
 `type: "agent_view"` and report `active`, `source`, and optional `label`.
+
+## Modules
+
+Modules are small lists that plugins publish at the top of the expanded
+sidebar, above Spaces. Each module has a title and up to 64 items; each item
+shows a status icon, a label, optional detail text, and up to four action
+controls that run the owning plugin's manifest actions when clicked.
+
+```json
+{
+  "id": "modules_set",
+  "method": "module.set",
+  "params": {
+    "source": "plugin:example.schedule",
+    "module_id": "tasks",
+    "title": "schedules",
+    "items": [
+      {
+        "id": "daily-review",
+        "label": "Daily review",
+        "detail": "next 09:00 · ok 08:00",
+        "status": "ok",
+        "actions": [
+          {"action_id": "run-now", "label": "▶"},
+          {"action_id": "toggle", "label": "⏸"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+`module.set` replaces the module with the same `source` and `module_id`, or adds
+it. Modules render in ascending `order` (default `0`), then by source and module
+id. Item `status` is `neutral` (default), `active`, `ok`, `warning`, `error`, or
+`paused`; clients render unknown future values as `neutral`. Titles are at most
+32 characters, labels 80, details 120, and action labels 12. A source may
+publish up to 8 modules. Items with actions require a `plugin:<HERDR_PLUGIN_ID>`
+source. Herdr resolves each action id against that plugin's manifest when the
+control is clicked and rejects ids the plugin does not declare.
+
+`module.clear` with no params removes every module, with `source` removes that
+source's modules, and with `source` and `module_id` removes one module.
+`module.list` returns the current modules. Set, clear, and list respond with
+`type: "module_list"`.
+
+Like Agent views, modules are transient session state. They disappear when the
+server exits or when the owning plugin is disabled, unlinked, or uninstalled.
+Plugins republish them from a `[[startup]]` hook.
+
+Clicking an item action sends `module.item.activate` with `source`,
+`module_id`, `item_id`, and `action_id`. Herdr runs the plugin action with
+`invocation_source` set to `module`, `module_id` and `module_item_id` in
+`HERDR_PLUGIN_CONTEXT_JSON`, and the `HERDR_MODULE_ID` and
+`HERDR_MODULE_ITEM_ID` environment variables. Modules appear only in the
+expanded desktop sidebar; collapsed and mobile layouts do not show them.
 
 ## Plugin APIs
 

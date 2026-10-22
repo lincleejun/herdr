@@ -34,6 +34,7 @@ impl App {
             .into_iter()
             .map(|plugin| (plugin.plugin_id.clone(), plugin))
             .collect();
+        self.drop_modules_of_missing_plugins();
     }
 
     fn refresh_installed_plugins(&mut self) -> std::io::Result<()> {
@@ -131,6 +132,7 @@ impl App {
                 .plugin_panes
                 .retain(|_, record| record.plugin_id != plugin_id);
             self.clear_agent_view_for_source(&format!("plugin:{plugin_id}"));
+            self.clear_modules_for_source(&format!("plugin:{plugin_id}"));
         }
         encode_success(id, ResponseResult::PluginUnlinked { plugin_id, removed })
     }
@@ -201,6 +203,60 @@ impl App {
             return encode_error(id, code, message);
         }
         let context = self.merge_plugin_context(params.context, &id);
+        let log = match self.start_plugin_command(
+            &plugin,
+            Some(action.action_id.clone()),
+            None,
+            action.command.clone(),
+            &context,
+            None,
+        ) {
+            Ok(log) => log,
+            Err((code, message)) => return encode_error(id, code, message),
+        };
+        encode_success(
+            id,
+            ResponseResult::PluginActionInvoked {
+                action,
+                context,
+                log,
+            },
+        )
+    }
+
+    /// Invoke one action of `plugin_id` on behalf of a published module item.
+    pub(super) fn invoke_plugin_action_for_module(
+        &mut self,
+        id: String,
+        plugin_id: &str,
+        action_id: &str,
+        module_id: String,
+        module_item_id: String,
+    ) -> String {
+        if let Err(err) = self.refresh_installed_plugins() {
+            return encode_error(id, "plugin_registry_load_failed", err.to_string());
+        }
+        let (plugin, action) = match self.find_plugin_action(Some(plugin_id), action_id) {
+            Ok(pair) => pair,
+            Err((code, message)) => return encode_error(id, code, message),
+        };
+        if !plugin.enabled {
+            return encode_error(
+                id,
+                "plugin_disabled",
+                format!("plugin {} is disabled", plugin.plugin_id),
+            );
+        }
+        if let Err((code, message)) = ensure_platform_supported(
+            effective_platforms(&action.platforms, &plugin.platforms),
+            &format!("action '{}'", action.qualified_id()),
+        ) {
+            return encode_error(id, code, message);
+        }
+        let mut context = self.current_plugin_context("module");
+        context.invocation_source = Some("module".to_string());
+        context.module_id = Some(module_id);
+        context.module_item_id = Some(module_item_id);
         let log = match self.start_plugin_command(
             &plugin,
             Some(action.action_id.clone()),
@@ -735,6 +791,7 @@ impl App {
         };
         if !enabled {
             self.clear_agent_view_for_source(&format!("plugin:{plugin_id}"));
+            self.clear_modules_for_source(&format!("plugin:{plugin_id}"));
         }
         if enabled {
             encode_success(id, ResponseResult::PluginEnabled { plugin })
@@ -1060,6 +1117,46 @@ action = "bootstrap"
         );
     }
 
+    fn test_module(source: &str, module_id: &str) -> crate::api::schema::ModuleSetParams {
+        crate::api::schema::ModuleSetParams {
+            source: source.into(),
+            module_id: module_id.into(),
+            title: "Jobs".into(),
+            order: 0,
+            items: vec![crate::api::schema::ModuleItem {
+                id: "nightly".into(),
+                label: "Nightly".into(),
+                detail: None,
+                status: crate::api::schema::ModuleItemStatus::Neutral,
+                actions: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn registry_replacement_drops_modules_of_removed_plugins() {
+        let mut app = test_app();
+        let root = unique_temp_path("plugin-module-registry-replace");
+        write_manifest(&root);
+        link_manifest(&mut app, &root);
+        app.state.modules = vec![
+            test_module("plugin:example.worktree-bootstrap", "jobs"),
+            test_module("example.other", "jobs"),
+        ];
+
+        let entries = app.state.installed_plugins.values().cloned().collect();
+        app.replace_installed_plugins(entries);
+        assert_eq!(app.state.modules.len(), 2);
+
+        app.replace_installed_plugins(Vec::new());
+        assert_eq!(
+            app.state.modules,
+            vec![test_module("example.other", "jobs")]
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn plugin_link_creates_stable_config_and_state_dirs() {
         let mut app = test_app();
@@ -1181,6 +1278,19 @@ platforms = ["linux", "macos", "windows"]
         };
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].plugin_id, "example.worktree-bootstrap");
+        let plugin_module = app.handle_api_request(Request {
+            id: "plugin-module".into(),
+            method: Method::ModuleSet(test_module("plugin:example.worktree-bootstrap", "jobs")),
+        });
+        assert!(matches!(
+            response_result(&plugin_module),
+            ResponseResult::ModuleList { .. }
+        ));
+        app.handle_api_request(Request {
+            id: "other-module".into(),
+            method: Method::ModuleSet(test_module("example.other", "jobs")),
+        });
+        assert_eq!(app.state.modules.len(), 2);
 
         let unlink = app.handle_api_request(Request {
             id: "unlink".into(),
@@ -1195,6 +1305,9 @@ platforms = ["linux", "macos", "windows"]
                 removed: true
             } if plugin_id == "example.worktree-bootstrap"
         ));
+
+        assert_eq!(app.state.modules.len(), 1);
+        assert_eq!(app.state.modules[0].source, "example.other");
 
         let list = app.handle_api_request(Request {
             id: "list-empty".into(),
@@ -1544,6 +1657,10 @@ platforms = ["linux", "macos"]
             filter: None,
             sort: Vec::new(),
         });
+        app.state.modules = vec![
+            test_module("plugin:example.worktree-bootstrap", "jobs"),
+            test_module("example.other", "jobs"),
+        ];
 
         let disabled = app.handle_api_request(Request {
             id: "disable".into(),
@@ -1556,6 +1673,17 @@ platforms = ["linux", "macos"]
         };
         assert!(!plugin.enabled);
         assert!(app.state.agent_view_override.is_none());
+        assert_eq!(
+            app.state.modules,
+            vec![test_module("example.other", "jobs")]
+        );
+        let module_restore = app.handle_api_request(Request {
+            id: "module-restore".into(),
+            method: Method::ModuleSet(test_module("plugin:example.worktree-bootstrap", "jobs")),
+        });
+        let module_restore: crate::api::schema::ErrorResponse =
+            serde_json::from_str(&module_restore).unwrap();
+        assert_eq!(module_restore.error.code, "plugin_disabled");
         let delayed_restore = app.handle_api_request(Request {
             id: "delayed-startup-restore".into(),
             method: Method::AgentViewSet(crate::api::schema::AgentViewSetParams {
@@ -2532,6 +2660,8 @@ command = ["sh", "-c", "printf %s ${{HERDR_PANE_ID-unset}} > '{}'; sleep 1"]
                     correlation_id: Some("external-correlation".into()),
                     clicked_url: None,
                     link_handler_id: None,
+                    module_id: None,
+                    module_item_id: None,
                 }),
             }),
         });
@@ -2883,6 +3013,105 @@ command = ["sh", "-c", "printf '%s' \"$HERDR_PLUGIN_ACTION_ID\""]
         assert_eq!(finished.status, PluginCommandStatus::Succeeded);
         assert_eq!(finished.stdout.as_deref(), Some("run"));
         assert_eq!(finished.exit_code, Some(0));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn module_item_activate_invokes_scoped_plugin_action_with_module_ids() {
+        let mut app = test_app();
+        let root = unique_temp_path("plugin-module-activate");
+        write_manifest_content(
+            &root,
+            r#"
+id = "example.schedules"
+name = "Schedules"
+version = "0.1.0"
+min_herdr_version = "0.6.10"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "run"
+title = "Run"
+command = ["sh", "-c", "printf '%s %s %s' \"$HERDR_MODULE_ID\" \"$HERDR_MODULE_ITEM_ID\" \"$HERDR_PLUGIN_ACTION_ID\""]
+"#,
+        );
+        link_manifest(&mut app, &root);
+        let mut module = test_module("plugin:example.schedules", "jobs");
+        module.items[0].actions = vec![
+            crate::api::schema::ModuleItemAction {
+                action_id: "run".into(),
+                label: "run".into(),
+            },
+            crate::api::schema::ModuleItemAction {
+                action_id: "absent".into(),
+                label: "gone".into(),
+            },
+        ];
+        let set = app.handle_api_request(Request {
+            id: "set".into(),
+            method: Method::ModuleSet(module),
+        });
+        assert!(matches!(
+            response_result(&set),
+            ResponseResult::ModuleList { .. }
+        ));
+        let activate = |item_id: &str, action_id: &str| Request {
+            id: format!("activate-{item_id}-{action_id}"),
+            method: Method::ModuleItemActivate(crate::api::schema::ModuleItemActivateParams {
+                source: "plugin:example.schedules".into(),
+                module_id: "jobs".into(),
+                item_id: item_id.into(),
+                action_id: action_id.into(),
+            }),
+        };
+        let error_code = |response: &str| {
+            serde_json::from_str::<crate::api::schema::ErrorResponse>(response)
+                .unwrap()
+                .error
+                .code
+        };
+
+        let response = app.handle_api_request(activate("missing", "run"));
+        assert_eq!(error_code(&response), "module_item_not_found");
+        let response = app.handle_api_request(activate("nightly", "other"));
+        assert_eq!(error_code(&response), "module_action_not_found");
+        let response = app.handle_api_request(activate("nightly", "absent"));
+        assert_eq!(error_code(&response), "plugin_action_not_found");
+
+        let invoke = app.handle_api_request(activate("nightly", "run"));
+        let ResponseResult::PluginActionInvoked {
+            action,
+            context,
+            log,
+        } = response_result(&invoke)
+        else {
+            panic!("expected plugin action invocation: {invoke}");
+        };
+        assert_eq!(action.qualified_id(), "example.schedules.run");
+        assert_eq!(context.invocation_source.as_deref(), Some("module"));
+        assert_eq!(context.module_id.as_deref(), Some("jobs"));
+        assert_eq!(context.module_item_id.as_deref(), Some("nightly"));
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            app.drain_all_internal_events();
+            if app.state.plugin_command_logs.iter().any(|entry| {
+                entry.log_id == log.log_id && entry.status != PluginCommandStatus::Running
+            }) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let finished = app
+            .state
+            .plugin_command_logs
+            .iter()
+            .find(|entry| entry.log_id == log.log_id)
+            .expect("log should exist");
+        assert_eq!(finished.status, PluginCommandStatus::Succeeded);
+        assert_eq!(finished.stdout.as_deref(), Some("jobs nightly run"));
 
         let _ = std::fs::remove_dir_all(root);
     }

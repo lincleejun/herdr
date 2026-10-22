@@ -8,6 +8,16 @@ pub(crate) struct ClientEndpointAgentViewProjection {
     pub(crate) view: Result<Option<crate::api::schema::AgentViewSetParams>, ()>,
 }
 
+/// Latest plugin-published modules for one endpoint connection. They render only while
+/// `boot_id` (and the connection generation) match the endpoint's current snapshot.
+#[derive(Clone, Debug)]
+pub(crate) struct ClientEndpointModules {
+    generation: Option<u64>,
+    boot_id: String,
+    revision: u64,
+    modules: Vec<crate::api::schema::ModuleSetParams>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ClientShellEndpoint {
     pub(crate) endpoint_id: ClientEndpointId,
@@ -21,6 +31,7 @@ pub(crate) struct ClientShellEndpoint {
     pub(crate) agent_view_projection: Option<ClientEndpointAgentViewProjection>,
     pending_agent_view_projection: Option<ClientEndpointAgentViewProjection>,
     pub(crate) agent_view_projection_supported: bool,
+    pub(crate) modules: Option<ClientEndpointModules>,
     pub(crate) methods: Option<HashSet<String>>,
 }
 
@@ -87,6 +98,7 @@ impl ClientShellState {
                     .and_then(|endpoint| endpoint.pending_agent_view_projection.clone()),
                 agent_view_projection_supported: previous
                     .is_some_and(|endpoint| endpoint.agent_view_projection_supported),
+                modules: previous.and_then(|endpoint| endpoint.modules.clone()),
                 methods: previous.and_then(|endpoint| endpoint.methods.clone()),
             });
         }
@@ -133,6 +145,7 @@ impl ClientShellState {
             endpoint.agent_view_projection = None;
             endpoint.pending_agent_view_projection = None;
             endpoint.agent_view_projection_supported = false;
+            endpoint.modules = None;
         }
     }
 
@@ -352,6 +365,102 @@ impl ClientShellState {
             projection.revision,
             projection.view,
         );
+    }
+
+    pub(crate) fn set_endpoint_modules_for_generation(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        generation: u64,
+        projection: crate::client::endpoint::DecodedModulesProjection,
+    ) {
+        self.set_endpoint_modules(
+            endpoint_id,
+            Some(generation),
+            projection.boot_id,
+            projection.revision,
+            projection.modules,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_endpoint_modules(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        boot_id: &str,
+        modules: Vec<crate::api::schema::ModuleSetParams>,
+    ) {
+        let Some((generation, revision)) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+            .map(|endpoint| {
+                (
+                    endpoint.snapshot_generation,
+                    endpoint
+                        .snapshot
+                        .as_deref()
+                        .map_or(0, |snapshot| snapshot.revision),
+                )
+            })
+        else {
+            return;
+        };
+        self.set_endpoint_modules(
+            endpoint_id,
+            generation,
+            boot_id.to_owned(),
+            revision,
+            modules,
+        );
+    }
+
+    fn set_endpoint_modules(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        generation: Option<u64>,
+        boot_id: String,
+        revision: u64,
+        modules: Vec<crate::api::schema::ModuleSetParams>,
+    ) {
+        let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        else {
+            return;
+        };
+        if endpoint.modules.as_ref().is_some_and(|current| {
+            current.generation == generation
+                && current.boot_id == boot_id
+                && current.revision > revision
+        }) {
+            return;
+        }
+        endpoint.modules = Some(ClientEndpointModules {
+            generation,
+            boot_id,
+            revision,
+            modules,
+        });
+    }
+
+    /// Modules published for `endpoint`'s current boot, or an empty slice when the stored
+    /// projection belongs to another boot or connection generation.
+    pub(crate) fn endpoint_modules(
+        endpoint: &ClientShellEndpoint,
+    ) -> &[crate::api::schema::ModuleSetParams] {
+        let Some(snapshot) = endpoint.snapshot.as_deref() else {
+            return &[];
+        };
+        endpoint
+            .modules
+            .as_ref()
+            .filter(|modules| {
+                modules.generation == endpoint.snapshot_generation
+                    && modules.boot_id == snapshot.boot_id
+            })
+            .map(|modules| modules.modules.as_slice())
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -741,6 +850,7 @@ pub(super) fn local_endpoint() -> ClientShellEndpoint {
         agent_view_projection: None,
         pending_agent_view_projection: None,
         agent_view_projection_supported: false,
+        modules: None,
         methods: None,
     }
 }

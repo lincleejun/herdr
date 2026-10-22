@@ -2126,6 +2126,16 @@ async fn run_client_loop(
                                 }
                                 continue;
                             }
+                            Ok(endpoint::EndpointControlMessage::ModulesProjection(projection)) => {
+                                if let Some(shell) = state.shell.as_mut() {
+                                    shell.set_endpoint_modules_for_generation(
+                                        &endpoint_id,
+                                        generation,
+                                        projection,
+                                    );
+                                }
+                                continue;
+                            }
                             Ok(endpoint::EndpointControlMessage::AgentCompletions(projection)) => {
                                 if let Some(shell) = state.shell.as_mut() {
                                     shell.set_endpoint_agent_completions(

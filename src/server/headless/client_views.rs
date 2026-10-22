@@ -242,6 +242,8 @@ impl HeadlessServer {
         )
     }
 
+    /// Advertised shell methods omitted here, such as `module.item.activate`
+    /// (starts a plugin command), neither claim geometry nor navigate.
     fn shell_endpoint_claims_geometry(method: &api::schema::Method) -> bool {
         use api::schema::Method;
 
@@ -957,5 +959,24 @@ impl HeadlessServer {
                     || self.resize_shell_tab_if_controller(client_id, false)
             };
         changed | navigation_changed | geometry_changed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_item_activation_does_not_claim_geometry_or_reconcile_locations() {
+        let method =
+            api::schema::Method::ModuleItemActivate(api::schema::ModuleItemActivateParams {
+                source: "plugin:example.schedules".into(),
+                module_id: "jobs".into(),
+                item_id: "nightly".into(),
+                action_id: "run".into(),
+            });
+        assert!(!HeadlessServer::shell_endpoint_claims_geometry(&method));
+        assert!(!HeadlessServer::shell_locations_may_need_reconcile(&method));
+        assert!(!HeadlessServer::public_request_may_change_geometry(&method));
     }
 }

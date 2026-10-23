@@ -123,7 +123,7 @@ pub fn session_ref_from_report(
         return None;
     }
 
-    if agent == "pi" || agent == "omp" {
+    if agent == "pi" || agent == "omp" || agent == "murong" {
         return _agent_session_path
             .and_then(AgentSessionRef::path)
             .or_else(|| agent_session_id.and_then(AgentSessionRef::id));
@@ -185,7 +185,7 @@ pub fn session_ref_from_snapshot(
         return None;
     }
     let session_ref = match (agent, kind) {
-        ("pi" | "omp", AgentSessionRefKind::Path) => AgentSessionRef::path(value)?,
+        ("pi" | "omp" | "murong", AgentSessionRefKind::Path) => AgentSessionRef::path(value)?,
         (_, AgentSessionRefKind::Id) => AgentSessionRef::id(value)?,
         _ => return None,
     };
@@ -238,6 +238,10 @@ pub fn plan(source: &str, agent: &str, session_ref: &AgentSessionRef) -> Option<
             // omp resume is `-r, --resume=<value>` (ID prefix or path); it has no
             // `--session` flag, unlike pi.
             vec!["omp".into(), format!("--resume={}", session_ref.value)]
+        }
+        ("herdr:murong", "murong", AgentSessionRefKind::Path | AgentSessionRefKind::Id) => {
+            // murong is an omp fork and keeps omp's `--resume=<value>` flag.
+            vec!["murong".into(), format!("--resume={}", session_ref.value)]
         }
         ("herdr:hermes", "hermes", AgentSessionRefKind::Id) => {
             vec![
@@ -335,6 +339,7 @@ pub(crate) fn is_official_agent_source(source: &str, agent: &str) -> bool {
             | ("herdr:droid", "droid")
             | ("herdr:kimi", "kimi")
             | ("herdr:omp", "omp")
+            | ("herdr:murong", "murong")
             | ("herdr:mastracode", "mastracode")
             | ("herdr:pi", "pi")
             | ("herdr:hermes", "hermes")
@@ -543,6 +548,16 @@ mod tests {
             .unwrap()
             .argv,
             vec!["omp", format!("--resume={omp_session}").as_str()]
+        );
+        assert_eq!(
+            plan(
+                "herdr:murong",
+                "murong",
+                &AgentSessionRef::path(&omp_session).unwrap()
+            )
+            .unwrap()
+            .argv,
+            vec!["murong", format!("--resume={omp_session}").as_str()]
         );
         assert_eq!(
             plan(

@@ -1408,6 +1408,11 @@ impl TerminalState {
                     Some("startup" | "new" | "resume" | "fork")
                 )
                 | (
+                    "herdr:murong",
+                    "murong",
+                    Some("startup" | "new" | "resume" | "fork")
+                )
+                | (
                     "herdr:qwen",
                     "qwen",
                     Some("startup" | "clear" | "resume" | "compact" | "branch")
